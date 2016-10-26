@@ -5,11 +5,11 @@
 #define F_CPU 16000000UL
 #define PASSWORD_CHANGE 0
 #define PASSWORD_CHECK	1
-#define MEMORY 			2
+#define MEMORY 		2
 #define MEMORY_AGAIN 	3
 #define MEMORY_CHECK	4
-#define IMPLEMENT		5
-#define INPUT_CHECK		6
+#define IMPLEMENT	5
+#define INPUT_CHECK	6
 
 #define LED_0 5000
 
