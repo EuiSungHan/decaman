@@ -1,0 +1,1047 @@
+#include <avr/io.h>
+#define F_CPU 16000000UL
+#include <util/delay.h>
+#include <avr/interrupt.h>
+
+#define PASSWORD_CHANGE 0
+#define PASSWORD_CHECK	1
+#define MEMORY 			2
+#define MEMORY_AGAIN 	3
+#define MEMORY_CHECK	4
+#define IMPLEMENT		5
+#define INPUT_CHECK		6
+
+#define LED_0 5000
+
+#define LED_1_m 6000
+#define LED_1_M 10500
+
+#define LED_2_m 17500
+#define LED_2_M 22500
+
+#define LED_3_m 29500
+#define LED_3_M 34500
+
+#define LED_4_m 39500
+#define LED_4_M 44500
+
+#define LED_5_m 51500
+#define LED_5_M 56500
+
+#define LED_DELAY 5
+
+#define PASSWORD_LENGTH 10
+
+#define INIT_VALUE 33
+
+typedef struct _POINT {
+
+	unsigned int x;
+	unsigned int y;
+
+} POINT;
+
+void init_PORT(void);
+void init_EX_INTERRUPT(void);
+void init_PWM(void);
+void init_ADC(void);
+void init_USART(void);
+
+void Uart_Putch0( unsigned char data );
+unsigned char Uart_Getch0( void );
+void Uart_U16Bit_PutNum0( unsigned int NumData );
+
+void FindPannelPoint(POINT* pn_pt);
+void DisplayLed(POINT* pn_pt, unsigned int* password, int* p_index);
+void BluetoothGetPoint(POINT* pn_pt, unsigned char point);
+void DisplayContents(const char contents);
+
+volatile unsigned int password[PASSWORD_LENGTH] = {0,};
+volatile unsigned int password_temp[PASSWORD_LENGTH] = {0,};
+volatile unsigned int input[PASSWORD_LENGTH] = {0,};
+
+int checktouchpanel = 0;
+int checkbluetooth = 0;
+int mode1=1;
+
+volatile char state=IMPLEMENT;
+
+int main(void) {
+
+	POINT pn_pt={0,0};
+	
+	unsigned char point = 0;
+	int p_index = 0;
+	int i;
+	int fail = 0;
+
+	init_PORT();
+	init_EX_INTERRUPT();
+	init_PWM();
+	init_ADC();
+	init_USART();
+
+	sei();	// Global interrupt enable
+
+	for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+		password[i] = INIT_VALUE;
+		password_temp[i] = INIT_VALUE;
+		input[i] = INIT_VALUE;
+	}
+
+	for(i=0 ; i<3 ; i++) password[i] = i;	//set initial password
+
+	while(1) {
+
+		switch(state) {
+
+			case PASSWORD_CHANGE :
+
+			PORTE = 0b00010000;
+
+			if(mode1==1)
+			{
+				FindPannelPoint(&pn_pt);
+			}
+			BluetoothGetPoint(&pn_pt, point);
+
+			DisplayLed(&pn_pt, input, &p_index);
+
+			_delay_ms(300);
+
+			break;
+
+			case PASSWORD_CHECK :
+
+			PORTE = 0b00010000;
+
+			state = MEMORY;
+
+			for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+
+				if(password[i] != input[i]) {
+
+					state = PASSWORD_CHANGE;
+
+					for(i=0 ; i<PASSWORD_LENGTH ; i++) input[i] = INIT_VALUE;
+
+					DisplayContents('x');
+
+					break;
+
+				}
+
+			}
+
+			if(state == MEMORY) {
+
+				for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+					password[i] = INIT_VALUE;
+					password_temp[i] = INIT_VALUE;
+					input[i] = INIT_VALUE;
+				}
+
+				DisplayContents('e');
+			}
+			
+			break;
+			
+			case MEMORY :
+
+			PORTE = 0b00010000;
+
+			if(mode1==1)
+			{
+				FindPannelPoint(&pn_pt);
+			}
+			BluetoothGetPoint(&pn_pt, point);
+
+			DisplayLed(&pn_pt, password, &p_index);
+
+			_delay_ms(300);
+
+			break;
+
+
+			case MEMORY_AGAIN :
+
+			PORTE = 0b00010000;
+
+			if(mode1==1)
+			{
+				FindPannelPoint(&pn_pt);
+			}
+			BluetoothGetPoint(&pn_pt, point);
+
+			DisplayLed(&pn_pt, password_temp, &p_index);
+
+			_delay_ms(300);
+
+			break;
+
+			case MEMORY_CHECK :
+
+			PORTE = 0b00010000;
+
+			state = IMPLEMENT;
+
+			for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+
+				if(password[i] != password_temp[i]) {
+
+					state = MEMORY;
+
+					for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+						password[i] = INIT_VALUE;
+						password_temp[i] = INIT_VALUE;
+					}
+
+					DisplayContents('x');
+
+					break;
+
+				}
+
+			}
+
+			if(state == IMPLEMENT) DisplayContents('e');
+
+			break;
+
+			case IMPLEMENT :
+
+			PORTE = 0b00100000;
+		
+			if(mode1==1)
+			{
+				FindPannelPoint(&pn_pt);
+			}
+			BluetoothGetPoint(&pn_pt, point);
+			DisplayLed(&pn_pt, input, &p_index);
+
+			_delay_ms(300);
+
+			break;
+
+			case INPUT_CHECK :
+
+			PORTE = 0b00100000;
+
+			for(i=0 ; i<PASSWORD_LENGTH ; i++)  {
+				
+				if(password[i] != input[i]) {
+					
+					fail = 1;
+					break;
+				}
+			}
+
+			if(fail) {
+
+				DisplayContents('x');
+
+			}
+			else {
+
+				DisplayContents('o');
+
+				OCR3A = 14;
+
+				_delay_ms(2000);
+
+				OCR3A = 24;
+
+			}
+
+			fail=0;
+
+			for(i=0 ; i<PASSWORD_LENGTH ; i++) input[i] = INIT_VALUE;
+
+			state = IMPLEMENT;
+
+			break;
+
+		}
+
+		
+	}
+
+	cli();
+
+	return 0;
+
+}
+
+ISR(INT1_vect) {
+
+	int i=0;
+	
+	state = PASSWORD_CHANGE;
+
+	for(i=0 ; i<PASSWORD_LENGTH ; i++) {
+		password_temp[i] = INIT_VALUE;
+		input[i] = INIT_VALUE;
+	}
+
+}
+
+ISR(INT2_vect) {
+
+	state = IMPLEMENT;
+
+}
+
+void init_PORT(void) {
+
+	DDRA=0xFF;	// LED(PA7~PA0)
+	DDRB=0xFF;	// LED(PB7~PB0)
+	DDRC=0xFF;	// LED(PC7~PC0)
+	DDRD=0x01;	// Switch(PD1, PD2), LED(PD0)
+	DDRE=0x38;	// Switch LED(PE4, PE5), Motor(PE3)
+	DDRF=0xF0;	// Touch pannel input(PF4, PF5, PF6, PF7), Touch pannel output(PF0, PF1)
+
+
+}
+
+void init_EX_INTERRUPT(void) {
+
+	EICRA = 0x28; // 0b00101000 / INT1,2 -> falling edge
+	EICRB = 0x00;
+	EIMSK = 0x06; // INT1,2 -> enable / interrupt enable
+
+
+}
+
+void init_PWM(void) {
+
+	TCCR3A	= (1<<COM3A1)|(0<<COM3A0)|(0<<COM3B1)|(0<<COM3B0)|(0<<COM3C1)|(0<<COM3C0)|(1<<WGM31) |(0<<WGM30);
+	TCCR3B	= (0<<ICNC3) |(0<<ICES3) |			  (1<<WGM33) |(1<<WGM32) |(1<<CS32)  |(0<<CS31)  |(1<<CS30) ;
+	//TIMSK	= (0<<OCIE2) |(0<<TOIE2) |(0<<TICIE1)|(0<<OCIE1A)|(0<<OCIE1B)|(0<<TOIE1) |(0<<OCIE0) |(0<<TOIE0);
+	//ETIMSK	= 						  (0<<TICIE3)|(0<<OCIE3A)|(0<<OCIE3B)|(0<<TOIE3) |(0<<OCIE3C)|(0<<OCIE1C);
+
+	ICR3 = 313;
+
+	OCR3A = 24;
+
+}
+
+void init_ADC(void) {
+	
+	//ADMUX  = (0<<REFS1)|(1<<REFS0)|(0<<ADLAR)|(0<<MUX4)|(0<<MUX3)|(0<<MUX2) |(0<<MUX1) |(0<<MUX0);
+	//ADCSRA = (1<<ADEN) |(0<<ADSC) |(0<<ADFR) |(0<<ADFR)|(1<<ADIE)|(0<<ADPS2)|(0<<ADPS1)|(0<<ADPS0);
+
+	ADMUX = 0x60; // AVCC with external capacitor at AREF pin (AVCC=5V)
+	ADCSRA = 0x87; // ADC enable(ADEN=1) / prescaler : 128 division factor
+
+}
+
+void init_USART(void) {
+
+	//UCSR0B	= (0<<RXCIE0)|(0<<TXCIE0)|(0<<UDRIE0)|(1<<RXEN0) |(1<<TXEN0) |(0<<UCSZ02)|(0<<RXB80) |(0<<TXB80);
+	//UCSR0C	=             (0<<UMSEL0)|(0<<UPM01) |(0<<UPM00) |(0<<USBS1) |(1<<UCSZ01)|(1<<UCSZ00)|(0<<UCPOL0);
+	//UBRR0H	= 0;
+	//UBRR0L	= 8;
+	
+	UBRR0H = 0;
+	UBRR0L = 8; // f_osc = 16 Mhz , Baud rate = 115200(bps)
+	UCSR0B = 0x18; // RXEN=1, TXEN=1
+	UCSR0C = 0x06; // Asynchronous / No parity / 1 stop bit / 8 bit data size
+}
+
+/* function of transmiting the data to computer */
+void Uart_Putch0( unsigned char data )
+{
+	
+	while ( !( UCSR0A & (1<<UDRE0)) ); /* Wait for empty transmit buffer */
+	
+	UDR0 = data; /* Put data into buffer, sends the data */
+}
+
+/* function of transmiting the data to MCU */
+unsigned char Uart_Getch0( void )
+{
+	
+	while ( !(UCSR0A & (1<<RXC0))); /* Wait for data to be received */
+	
+	return UDR0; /* Get and return received data from buffer */
+}
+
+void Uart_U16Bit_PutNum0( unsigned int NumData )
+{
+	unsigned int TempData;
+
+	//TempData = (NumData%100000)/10000;
+	//Uart_Putch0(TempData+48);                 // 10000
+	
+	//TempData = (NumData%10000)/1000;
+	//Uart_Putch0(TempData+48);                 // 1000
+	
+	//TempData = (NumData%1000)/100;
+	//Uart_Putch0(TempData+48);                 // 100
+	
+	TempData = (NumData%100)/10;
+	Uart_Putch0(TempData+48);                 // 10
+	
+	TempData = NumData%10;
+	Uart_Putch0(TempData+48);				  // 1
+
+}
+void BluetoothGetPoint(POINT* pn_pt, unsigned char point) {
+	
+	_delay_ms(50);
+
+	if((UCSR0A & (1<<RXC0))) /* data to be received  */
+	{
+		mode1 = 0;	//touch pannel mode off
+
+		point = UDR0; /* Get and return received data from buffer */
+
+		if(point == '*')
+		{
+			pn_pt->x = (LED_0 - 100);
+			pn_pt->y = (LED_0 - 100);
+		}
+		
+		else if(point == '1')
+		{
+			pn_pt->x = (LED_1_M - 2000);
+			pn_pt->y = (LED_5_M - 2000);
+		}
+		else if(point == '2')
+		{
+			pn_pt->x = (LED_2_M - 2000);
+			pn_pt->y = (LED_5_M - 2000);
+		}
+		else if(point == '3')
+		{
+			pn_pt->x = (LED_3_M - 2000);
+			pn_pt->y = (LED_5_M - 2000);
+		}
+		else if(point == '4')
+		{
+			pn_pt->x = (LED_1_M - 2000);
+			pn_pt->y = (LED_4_M - 2000);
+		}
+		else if(point == '5')
+		{
+			pn_pt->x = (LED_2_M - 2000);
+			pn_pt->y = (LED_4_M - 2000);
+		}
+		else if(point == '6')
+		{
+			pn_pt->x = (LED_3_M - 2000);
+			pn_pt->y = (LED_4_M - 2000);
+		}
+		else if(point == '7')
+		{
+			pn_pt->x = (LED_1_M - 2000);
+			pn_pt->y = (LED_3_M - 2000);
+		}
+		else if(point == '8')
+		{
+			pn_pt->x = (LED_2_M - 2000);
+			pn_pt->y = (LED_3_M - 2000);
+		}
+		else if(point == '9')
+		{
+			pn_pt->x = (LED_3_M - 2000);
+			pn_pt->y = (LED_3_M - 2000);
+		}
+		else
+		{
+
+		}
+
+	checkbluetooth = 1;
+
+	}
+}
+void FindPannelPoint(POINT* pn_pt) {
+
+
+	// x 축 point 찾기 //
+
+	PORTF = 0x60;	// x-axis(x2=0, y2=1, x1=1, y1=0)
+	ADMUX = 0x61;	// ADC1(PF1)
+	_delay_ms(5);
+	ADCSRA |= 0xC0; // ADEN=1, ADSC=1
+			
+	_delay_ms(50);
+	if((ADCSRA&0x10) != 0x00)	//ADC data to be received
+	{
+		pn_pt->x = ADC;
+		checktouchpanel = 1;
+		_delay_ms(10);
+	}
+	else if((ADCSRA&0x10) == 0x00)
+	{
+		pn_pt->x = (LED_0-100);
+		_delay_ms(10);
+	}
+
+	// y 축 point 찾기 //
+
+	PORTF = 0x90;	// y-axis(x2=1, y2=0, x1=0, y1=1)
+	ADMUX = 0x60;	// ADC0(PF0)
+	_delay_ms(5);
+	ADCSRA |= 0xC0; // ADEN=1, ADSC=1
+
+	_delay_ms(50);
+	if((ADCSRA&0x10) != 0x00)	//ADC data to be received
+	{	
+		pn_pt->y = ADC;
+		checktouchpanel = 1;
+		_delay_ms(10);
+	}
+	else if((ADCSRA&0x10) == 0x00)
+	{
+		pn_pt->y = (LED_0-100);
+		_delay_ms(10);
+	}
+
+	_delay_ms(10);
+
+}
+
+void DisplayLed(POINT* pn_pt, unsigned int* password, int* p_index) {
+
+	if(pn_pt->y < LED_1_M && pn_pt->y > LED_1_m) {
+		
+		if(pn_pt->x < LED_1_M && pn_pt->y > LED_1_m) {
+			PORTA |= 0x10;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 20;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_2_M && pn_pt->x > LED_2_m) {
+			PORTA |= 0x08;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 21;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_3_M && pn_pt->x > LED_3_m) {
+			PORTA |= 0x04;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 22;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_4_M && pn_pt->x > LED_4_m) {
+			PORTA |= 0x02;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 23;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_5_M && pn_pt->x > LED_5_m) {
+			PORTA |= 0x01;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 24;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+
+	}
+	
+	else if(pn_pt->y < LED_2_M && pn_pt->y > LED_2_m) {
+
+		if(pn_pt->x < LED_1_M && pn_pt->y > LED_1_m) {
+			PORTB |= 0x02;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 15;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+
+		}
+		else if(pn_pt->x < LED_2_M && pn_pt->x > LED_2_m) {
+			PORTB |= 0x01;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 16;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_3_M && pn_pt->x > LED_3_m) {
+			PORTA |= 0x80;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 17;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+
+		}
+		else if(pn_pt->x < LED_4_M && pn_pt->x > LED_4_m) {
+			PORTA |= 0x40;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 18;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_5_M && pn_pt->x > LED_5_m) {
+			PORTA |= 0x20;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 19;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+
+	}
+
+	else if(pn_pt->y < LED_3_M && pn_pt->y > LED_3_m) {
+
+		if(pn_pt->x < LED_1_M && pn_pt->y > LED_1_m) {
+			PORTB |= 0x40;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 10;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_2_M && pn_pt->x > LED_2_m) {
+			PORTB |= 0x20;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 11;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_3_M && pn_pt->x > LED_3_m) {
+			PORTB |= 0x10;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 12;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_4_M && pn_pt->x > LED_4_m) {
+			PORTB |= 0x08;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 13;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_5_M && pn_pt->x > LED_5_m) {
+			PORTB |= 0x04;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 14;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+
+	}
+
+	else if(pn_pt->y < LED_4_M && pn_pt->y > LED_4_m) {
+
+		if(pn_pt->x < LED_1_M && pn_pt->y > LED_1_m) {
+			PORTC |= 0x08;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 5;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_2_M && pn_pt->x > LED_2_m) {
+			PORTC |= 0x04;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 6;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_3_M && pn_pt->x > LED_3_m) {
+			PORTC |= 0x02;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 7;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_4_M && pn_pt->x > LED_4_m) {
+			PORTC |= 0x01;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 8;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_5_M && pn_pt->x > LED_5_m) {
+			PORTB |= 0x80;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 9;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+
+	}
+
+	else if(pn_pt->y < LED_5_M && pn_pt->y > LED_5_m) {
+
+		if(pn_pt->x < LED_1_M && pn_pt->y > LED_1_m) {
+			PORTD |= 0x01;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 0;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_2_M && pn_pt->x > LED_2_m) {
+			PORTC |= 0x80;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 1;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_3_M && pn_pt->x > LED_3_m) {
+			PORTC |= 0x40;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 2;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_4_M && pn_pt->x > LED_4_m) {
+			PORTC |= 0x20;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 3;
+			
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+		else if(pn_pt->x < LED_5_M && pn_pt->x > LED_5_m) {
+			PORTC |= 0x10;
+			_delay_ms(LED_DELAY);
+
+			password[*p_index] = 4;
+
+			if(checktouchpanel == 1)
+			{
+				if( password[(*p_index)-1] != password[*p_index] ) (*p_index)++;
+				else password[*p_index] = INIT_VALUE;
+			}
+			else if(checkbluetooth == 1)
+			{
+				(*p_index)++;
+			}
+		}
+
+	}
+	
+	checktouchpanel = 0;
+	checkbluetooth = 0;
+
+	if((pn_pt->x < LED_0 && pn_pt->y < LED_0)) {
+		
+		if(*p_index != 0) {
+
+			switch(state) {
+				
+				case IMPLEMENT :
+
+				state = INPUT_CHECK;
+				break;
+
+				case PASSWORD_CHANGE :
+
+				state = PASSWORD_CHECK;
+				break;
+
+				case MEMORY :
+
+				state = MEMORY_AGAIN;
+				break;
+
+				case MEMORY_AGAIN :
+
+				state = MEMORY_CHECK;
+				break;
+			}
+
+			mode1 = 1;
+		}
+		
+		*p_index = 0;
+
+		PORTA = 0x00;
+		PORTB = 0x00;
+		PORTC = 0x00;
+		PORTD &= 0xFE;
+
+	}
+
+	pn_pt->x = (LED_5_M+100);
+	pn_pt->y = (LED_5_M+100);
+}
+
+void DisplayContents(const char contents) {
+
+	switch(contents) {
+		
+		case 'x' :
+
+		PORTA = 0x51;
+		PORTB = 0x11;
+		PORTC = 0x15;
+		PORTD = 0x01;
+
+		_delay_ms(1000);
+
+		PORTA = 0x00;
+		PORTB = 0x00;
+		PORTC = 0x00;
+		PORTD = 0x00;
+
+		break;
+
+		case 'o' :
+
+		PORTC = 0xF0;
+		PORTD |= 0x01;
+		_delay_ms(500);
+
+		PORTD &= 0xFE;
+		PORTB = 0x80;
+		PORTC = 0x0F;
+		_delay_ms(500);
+
+		PORTC = 0x00;
+		PORTB = 0x7C;
+		_delay_ms(500);
+
+		PORTA = 0xE0;
+		PORTB = 0x03;
+		_delay_ms(500);
+
+		PORTB = 0x00;
+		PORTA = 0x1F;
+		_delay_ms(500);
+		
+		PORTA = 0x00;
+		
+		break;
+
+		case 'e' :
+
+		PORTA=0xFF;
+		PORTB=0XFF;
+		PORTC=0XFF;
+		PORTD=0X01;
+		_delay_ms(500);
+
+		PORTA=0x00;
+		PORTB=0x00;
+		PORTC=0x00;
+		PORTD=0x00;
+
+		break;
+
+	}
+
+
+
+}
